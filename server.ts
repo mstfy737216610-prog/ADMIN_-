@@ -12,128 +12,58 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-const SOURCES_FILE = path.join(__dirname, 'sources.json');
-const STATE_FILE = path.join(__dirname, 'state.json');
-
-// Ensure default sources.json exists
-if (!fs.existsSync(SOURCES_FILE)) {
-  const initialSources = {
-    _info: "Telegram University Educational AutoForwarder Watchlist",
-    version: "2.0.0",
-    lastUpdated: new Date().toISOString(),
-    sources: [
-      {
-        id: "src_tg_univ_news",
-        type: "telegram",
-        target: "@KSU_News",
-        title: "أخبار الجامعة والقبول الرسمي",
-        priority: "high",
-        rule: "official",
-        keywords: ["قبول", "تسجيل", "نتائج", "مواعيد", "منح", "امتحان", "بي دي اف", "pdf"],
-        blacklist: ["إعلان ممول", "خدمات طلابية مدفوعة", "حل واجبات", "بحوث تخرج"],
-        enabled: true,
-        lastPostId: "0",
-        lastChecked: new Date().toISOString()
-      },
-      {
-        id: "src_x_moe",
-        type: "twitter",
-        target: "@moe_gov_sa",
-        title: "الحساب الرسمي لوزارة التعليم",
-        priority: "high",
-        rule: "official",
-        keywords: ["تقويم دراسي", "إجازة", "جامعات", "منح", "تسجيل"],
-        blacklist: ["إعلان تجاري"],
-        enabled: true,
-        lastPostId: "0",
-        lastChecked: new Date().toISOString()
-      },
-      {
-        id: "src_rss_dept",
-        type: "rss",
-        target: "https://news.ksu.edu.sa/ar/rss",
-        title: "بوابة الأخبار والفعاليات الجامعية",
-        priority: "medium",
-        rule: "semi-official",
-        keywords: ["مؤتمر", "كتب", "بحث علمي", "وظائف معيدين"],
-        blacklist: ["رعاية إعلانية"],
-        enabled: true,
-        lastPostId: "0",
-        lastChecked: new Date().toISOString()
-      }
-    ]
-  };
-  fs.writeFileSync(SOURCES_FILE, JSON.stringify(initialSources, null, 2), 'utf-8');
-}
-
-// Ensure default state.json exists
-if (!fs.existsSync(STATE_FILE)) {
-  const initialState = {
-    bot_status: "active",
-    admin_id: "7607633343",
-    admin_user: "@M_S_F_G",
-    bot_username: "admiuin_bot",
-    processed_count: 14,
-    forwarded_count: 12,
-    ad_replaced_count: 2,
-    last_run_timestamp: new Date().toISOString(),
-    last_processed_ids: {
-      "@KSU_News": "184920",
-      "@moe_gov_sa": "178294104",
-      "https://news.ksu.edu.sa/ar/rss": "rss_item_9402"
+// In-memory fallback stores for UI
+let memorySources = {
+  sources: [
+    {
+      id: "src_tg_univ_news",
+      type: "telegram",
+      target: "@KSU_News",
+      title: "أخبار الجامعة والقبول الرسمي",
+      priority: "high",
+      rule: "official",
+      keywords: ["قبول", "تسجيل", "نتائج", "مواعيد", "منح", "امتحان", "بي دي اف", "pdf"],
+      blacklist: ["إعلان ممول", "خدمات طلابية مدفوعة"],
+      enabled: true,
+      lastPostId: "0",
+      lastChecked: new Date().toISOString()
     }
-  };
-  fs.writeFileSync(STATE_FILE, JSON.stringify(initialState, null, 2), 'utf-8');
-}
+  ]
+};
+
+let memoryState = {
+  bot_status: "active",
+  admin_id: "7607633343",
+  admin_user: "@M_S_F_G",
+  bot_username: "admiuin_bot",
+  processed_count: 0,
+  forwarded_count: 0,
+  ad_replaced_count: 0,
+  last_run_timestamp: new Date().toISOString()
+};
 
 // ----------------- API ENDPOINTS -----------------
 
 // 1. Get Sources
 app.get('/api/sources', (_req: Request, res: Response) => {
-  try {
-    const data = fs.readFileSync(SOURCES_FILE, 'utf-8');
-    res.json(JSON.parse(data));
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
+  res.json(memorySources);
 });
 
 // 2. Save Sources
 app.post('/api/sources', (req: Request, res: Response) => {
-  try {
-    const newSources = req.body;
-    newSources.lastUpdated = new Date().toISOString();
-    fs.writeFileSync(SOURCES_FILE, JSON.stringify(newSources, null, 2), 'utf-8');
-    res.json({ success: true, message: "تم حفظ وتحديث ملف sources.json بنجاح" });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
+  memorySources = req.body;
+  res.json({ success: true, message: "تم حفظ المصادر" });
 });
 
 // 3. Get State
 app.get('/api/state', (_req: Request, res: Response) => {
-  try {
-    const data = fs.readFileSync(STATE_FILE, 'utf-8');
-    res.json(JSON.parse(data));
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
+  res.json(memoryState);
 });
 
 // 4. Update State
 app.post('/api/state', (req: Request, res: Response) => {
-  try {
-    const newState = req.body;
-    newState.last_run_timestamp = new Date().toISOString();
-    fs.writeFileSync(STATE_FILE, JSON.stringify(newState, null, 2), 'utf-8');
-    res.json({ success: true, message: "تم تحديث حالة state.json بنجاح" });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
+  memoryState = req.body;
+  res.json({ success: true, message: "تم تحديث الحالة" });
 });
 
 // 5. Test Telegram Bot Token
@@ -359,29 +289,14 @@ app.get('/api/file-content', (req: Request, res: Response) => {
 });
 
 // 9. Campaigns API
-const CAMPAIGNS_FILE = path.join(__dirname, 'campaigns.json');
+let memoryCampaigns = { campaigns: [] };
 app.get('/api/campaigns', (_req: Request, res: Response) => {
-  try {
-    if (fs.existsSync(CAMPAIGNS_FILE)) {
-      const data = fs.readFileSync(CAMPAIGNS_FILE, 'utf-8');
-      res.json(JSON.parse(data));
-    } else {
-      res.json({ campaigns: [] });
-    }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
+  res.json(memoryCampaigns);
 });
 
 app.post('/api/campaigns', (req: Request, res: Response) => {
-  try {
-    fs.writeFileSync(CAMPAIGNS_FILE, JSON.stringify(req.body, null, 2), 'utf-8');
-    res.json({ success: true, message: 'تم حفظ الحملات بنجاح' });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
-  }
+  memoryCampaigns = req.body;
+  res.json({ success: true, message: 'تم حفظ الحملات' });
 });
 
 // ----------------- VITE MIDDLEWARE SETUP -----------------
