@@ -1,0 +1,89 @@
+{
+  "name": "admiuin_bot",
+  "title": "محرر المحتوى الأكاديمي واليوزربوت",
+  "description": "بوت قراءة القنوات وإعادة الصياغة بالذكاء الاصطناعي وربط الحسابات برقم الهاتف",
+  "git_remote": "mstfy737216610-prog/ADMIN_-",
+  "commands": [
+    {
+      "command": "/start",
+      "need_reply": false,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "",
+      "keyboard": "",
+      "aliases": "🎛 لوحة التحكم الرئيسية, لوحة التحكم, /help"
+    },
+    {
+      "command": "/login",
+      "need_reply": true,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "📱 أرسل الآن رقم هاتفك مع الرمز الدولي (مثال: +966501234567) لربط حسابك باليوزربوت:",
+      "keyboard": "",
+      "aliases": "تسجيل الدخول, ربط الحساب"
+    },
+    {
+      "command": "/otp",
+      "need_reply": true,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "👉 أرسل كود التحقق (OTP) الذي وصلك في تيليجرام الآن:",
+      "keyboard": "",
+      "aliases": ""
+    },
+    {
+      "command": "/campaigns",
+      "need_reply": false,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "",
+      "keyboard": "",
+      "aliases": "الحملات, قنوات النشر"
+    },
+    {
+      "command": "/sources",
+      "need_reply": false,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "",
+      "keyboard": "",
+      "aliases": "المصادر, القنوات المصدرية"
+    },
+    {
+      "command": "/ad",
+      "need_reply": false,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "",
+      "keyboard": "",
+      "aliases": "إعلاني الخاص, الإعلان"
+    },
+    {
+      "command": "/prompt",
+      "need_reply": false,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "",
+      "keyboard": "",
+      "aliases": "الذكاء الاصطناعي, تعليمات الذكاء"
+    },
+    {
+      "command": "/status",
+      "need_reply": false,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "",
+      "keyboard": "",
+      "aliases": "الإحصائيات, الحالة"
+    },
+    {
+      "command": "/logout",
+      "need_reply": false,
+      "auto_retry_time": "",
+      "folder": "",
+      "answer": "",
+      "keyboard": "",
+      "aliases": "تسجيل الخروج"
+    }
+  ]
+}

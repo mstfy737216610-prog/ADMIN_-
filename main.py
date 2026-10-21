@@ -485,8 +485,12 @@ async def main_application():
     import worker
     asyncio.create_task(worker.worker_task_loop())
 
-    # 4. تشغيل البوت الأساسي عبر Pyrogram
+    # 4. تشغيل البوت الأساسي عبر Pyrogram مع حذف أي ويب هوك قديم لمنع التعارض
     logging.info("🚀 تشغيل البوت الأساسي عبر Pyrogram...")
+    try:
+        await bot.delete_webhook(drop_pending_updates=False)
+    except Exception as e:
+        logging.warning(f"delete_webhook note: {e}")
     await bot.start()
     bot_me = await bot.get_me()
     logging.info(f"✅ تم تشغيل البوت بنجاح: @{bot_me.username} ({bot_me.first_name})")
