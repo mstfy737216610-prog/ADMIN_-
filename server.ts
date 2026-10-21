@@ -298,7 +298,7 @@ ${text}
 });
 
 // Fallback intelligent rephraser
-function fallbackRephrase(rawText: string, instructions?: string): string {
+function fallbackRephrase(rawText: string, _instructions?: string): string {
   const firstLine = rawText.split('\n')[0].replace(/[•\-*]/g, '').trim();
   const title = firstLine.length < 50 ? firstLine : 'إعلان هام للطلبة والجامعيين';
 
@@ -322,6 +322,68 @@ ${bullets}
 ${hashtags}`;
 }
 
+// 8. Serve Project Code Files directly to UI
+app.get('/api/file-content', (req: Request, res: Response) => {
+  const filename = String(req.query.file || 'main.py');
+  const allowed = [
+    'main.py',
+    'worker.py',
+    'database.py',
+    'requirements.txt',
+    'Procfile',
+    'bot.json',
+    'campaigns.json',
+    'sources.json',
+    'state.json',
+    '.env.example'
+  ];
+
+  if (!allowed.includes(filename)) {
+    res.status(400).json({ error: 'File not permitted' });
+    return;
+  }
+
+  const filePath = path.join(__dirname, filename);
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: `File ${filename} not found` });
+    return;
+  }
+
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    res.json({ filename, content });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 9. Campaigns API
+const CAMPAIGNS_FILE = path.join(__dirname, 'campaigns.json');
+app.get('/api/campaigns', (_req: Request, res: Response) => {
+  try {
+    if (fs.existsSync(CAMPAIGNS_FILE)) {
+      const data = fs.readFileSync(CAMPAIGNS_FILE, 'utf-8');
+      res.json(JSON.parse(data));
+    } else {
+      res.json({ campaigns: [] });
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/campaigns', (req: Request, res: Response) => {
+  try {
+    fs.writeFileSync(CAMPAIGNS_FILE, JSON.stringify(req.body, null, 2), 'utf-8');
+    res.json({ success: true, message: 'تم حفظ الحملات بنجاح' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
 // ----------------- VITE MIDDLEWARE SETUP -----------------
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -338,8 +400,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, () => {
-    console.log(`🚀 Telegram Educational Studio running on http://localhost:${PORT}`);
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 Telegram Educational Studio running on http://0.0.0.0:${PORT}`);
   });
 }
 
