@@ -31,6 +31,7 @@ import {
   FileCode,
   Activity,
   BookOpen,
+  Smartphone,
 } from 'lucide-react';
 
 const STORAGE_KEY_CONFIG = 'tg_educational_config_v2';
@@ -180,7 +181,7 @@ export default function App() {
   });
 
   const [logs, setLogs] = useState<ActivityLogItem[]>(INITIAL_LOGS);
-  const [activeTab, setActiveTab] = useState<'all' | 'github' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'guide'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'userbot' | 'sources' | 'ai' | 'ad' | 'sim' | 'code' | 'github'>('all');
   const [isLicenseOpen, setIsLicenseOpen] = useState(false);
   const [isTesterModalOpen, setIsTesterModalOpen] = useState(false);
   const [isTestingBot, setIsTestingBot] = useState(false);
@@ -443,15 +444,15 @@ export default function App() {
             عرض الكل
           </button>
           <button
-            onClick={() => setActiveTab('github')}
+            onClick={() => setActiveTab('userbot')}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
-              activeTab === 'github'
-                ? 'bg-slate-800 text-white border-b-2 border-purple-500'
+              activeTab === 'userbot'
+                ? 'bg-slate-800 text-white border-b-2 border-indigo-500'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-            <span>الربط بـ GitHub وبوت بزنس</span>
+            <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+            <span>آلية اليوزربوت والجلسات (تحت الغطاء)</span>
           </button>
           <button
             onClick={() => setActiveTab('sources')}
@@ -508,20 +509,21 @@ export default function App() {
             <FileCode className="w-3.5 h-3.5 text-purple-400" />
             <span>السكريبتات وملفات الإعدادات</span>
           </button>
+          <button
+            onClick={() => setActiveTab('github')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl font-bold transition-all shrink-0 ${
+              activeTab === 'github'
+                ? 'bg-slate-800 text-white border-b-2 border-purple-500'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
+            <span>الربط بـ GitHub وبوت بزنس</span>
+          </button>
         </div>
 
-        {/* GitHub & Bots.Business Cloud Hosting Guide */}
-        {(activeTab === 'all' || activeTab === 'github') && (
-          <section id="github-section">
-            <GitHubHostingGuide
-              adminUsername={config.adminUsername}
-              botUsername="admiuin_bot"
-            />
-          </section>
-        )}
-
-        {/* 1. Credentials (Bot Token & Admin ID) */}
-        {(activeTab === 'all' || activeTab === 'sources') && (
+        {/* 1. Userbot Multi-Session & Under The Hood Architecture */}
+        {(activeTab === 'all' || activeTab === 'userbot') && (
           <section id="credentials-section">
             <CredentialsPanel
               config={config}
@@ -529,6 +531,16 @@ export default function App() {
               onTestBot={handleTestBot}
               isTestingBot={isTestingBot}
               botInfo={botInfo}
+            />
+          </section>
+        )}
+
+        {/* GitHub & Bots.Business Cloud Hosting Guide */}
+        {(activeTab === 'all' || activeTab === 'github') && (
+          <section id="github-section">
+            <GitHubHostingGuide
+              adminUsername={config.adminUsername}
+              botUsername="admiuin_bot"
             />
           </section>
         )}
