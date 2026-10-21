@@ -1,0 +1,6 @@
+{
+  "name": "مُعيد توجيه تيليجرام التلقائي | Telegram AutoForwarder Pro",
+  "description": "لوحة تحكم وسكريبت معيد توجيه رسائل وقنوات تيليجرام التلقائي باللغة العربية، مع إدارة التوكن، الآدمن، الفلاتر المتقدمة وحفظ كامل حقوق المطور الأصلي.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
