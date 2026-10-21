@@ -1,0 +1,48 @@
+{
+  "version": "2.0.0",
+  "default_target_channel": "@MyUniversityChannel",
+  "campaigns": [
+    {
+      "id": "camp_general_admissions",
+      "name": "حملة القبول والأخبار الجامعية العامة",
+      "target_channel": "@MyUniversityChannel",
+      "enabled": true,
+      "sources": [
+        {
+          "id": "src_tg_univ",
+          "type": "telegram",
+          "target": "@KSU_News",
+          "title": "أخبار الجامعة والقبول الرسمي"
+        },
+        {
+          "id": "src_x_moe",
+          "type": "twitter",
+          "target": "@moe_gov_sa",
+          "title": "الحساب الرسمي لوزارة التعليم"
+        }
+      ],
+      "keywords": ["قبول", "تسجيل", "نتائج", "مواعيد", "منح", "امتحان", "بي دي اف", "pdf", "دراسة"],
+      "blacklist": ["إعلان ممول", "إعلان تجاري", "برعاية"],
+      "custom_instruction": "أسلوب أكاديمي رسمي رصين يبرز المواعيد والشروط للطلاب",
+      "custom_ad": "🎓 خدمات طلابية معتمدة وأكاديمية متكاملة 🎓\nيسرنا تقديم الدعم الأكاديمي الشامل للطلبة والباحثين:\n• مساعدة في البحوث والمشاريع الأكاديمية\n• التدقيق اللغوي وتنسيق الرسائل الجامعية\n• تلخيص المحاضرات والمقررات الدراسية\n\n📞 للتواصل والطلب مباشرة عبر المشرف: @M_S_F_G\n✨ جودة أكاديمية وسرعة في الإنجاز!"
+    },
+    {
+      "id": "camp_student_activities",
+      "name": "حملة الأنشطة والدورات والكتب الأكاديمية",
+      "target_channel": "@StudentActivitiesHub",
+      "enabled": true,
+      "sources": [
+        {
+          "id": "src_tg_courses",
+          "type": "telegram",
+          "target": "@FreeCoursesArab",
+          "title": "دورات وكتب طلابية"
+        }
+      ],
+      "keywords": ["دورة", "كتاب", "pdf", "ورشة", "شهادة", "مجانا", "ملخص"],
+      "blacklist": ["إعلان ممول"],
+      "custom_instruction": "أسلوب تشجيعي وتحفيزي للطلاب مع التركيز على الروابط الأكاديمية المجانية",
+      "custom_ad": "🎓 خدمات طلابية معتمدة وأكاديمية متكاملة 🎓\n📞 للتواصل والطلب مباشرة عبر المشرف: @M_S_F_G"
+    }
+  ]
+}

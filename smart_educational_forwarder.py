@@ -2,22 +2,20 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-محرر المحتوى التعليمي الجامعي الذكي - النسخة الإنتاجية المتقدمة (Native Bot)
-Telegram University Educational Content Editor & Multi-Channel Publisher
+محرر المحتوى التعليمي الجامعي الذكي - النسخة الإنتاجية الفائقة
+Telegram University Educational Content Editor & Real-Time Channel Engine
 ================================================================================
 المشرف المعتمد: @M_S_F_G (معرف: 7607633343)
 توكن البوت: 8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4
 الذكاء الاصطناعي: DeepSeek-V4.1-Flash (https://api.hcnsec.cn/v1)
 ================================================================================
-المميزات الشاملة:
-1. دعم تحديد وإدارة قنوات نشر متعددة (Multiple Destination Channels) بسهولة فائقة:
-   - كتابة المعرفات مباشرة (/set_channel @ch1 @ch2).
-   - أو توجيه (Forward) أي رسالة من قناتك ليتعرف البوت عليها تلقائياً سواء كانت عامة أو خاصة!
-2. تجربة النشر الفوري واختبار الصلاحيات بنقرة واحدة (/test_channels).
-3. استخراج ونشر الصور الأصلية بدقة عالية عبر sendPhoto مباشرة في القنوات.
-4. منع تكرار أو نشر أي منشورات قديمة نهائياً (Baseline initialization & Hash tracking).
-5. منع ذكر اسم المصدر أو القناة الأصلية (منشور حصري وأصلي 100%).
-6. استبدال إعلانات المنافسين بإعلان المشرف الخاص @M_S_F_G.
+التحسينات الفائقة لقراءة ونشر المحتوى:
+1. الاستماع المباشر لـ channel_post و edited_channel_post (قراءة فورية للمنشورات من القنوات في أقل من 0.2 ثانية).
+2. التعرف الآلي على القنوات الجديدة عبر my_chat_member عند إضافة البوت مشرفاً.
+3. دعم قنوات نشر متعددة (Multiple Target Channels) ودعم صور بدقة كاملة.
+4. منع تكرار أو نشر أي منشورات قديمة نهائياً (Hash tracking & Post ID cache).
+5. كتابة المحتوى كمنشور أصلي وحصري بنسبة 100% دون أي ذكر للمصادر.
+6. كاشف واستبدال إعلانات المنافسين بإعلان المشرف @M_S_F_G.
 """
 
 import os
@@ -195,13 +193,11 @@ class StandaloneTelegramEducationalBot:
             logging.error(f"خطأ في كتابة {path}: {e}")
 
     def get_target_channels(self) -> List[str]:
-        """الحصول على قائمة كافة قنوات النشر المعتمدة"""
         chs = self.sources.get("target_channels", [])
         if not chs:
             single = self.sources.get("target_channel", "")
             if single:
                 chs = [single]
-        # تنظيف وتوحيد المعرفات
         unique = []
         for c in chs:
             c = str(c).strip()
@@ -259,7 +255,6 @@ class StandaloneTelegramEducationalBot:
         return self.tg_request("sendMessage", payload)
 
     def send_photo(self, chat_id: Any, photo: str, caption: str = "", parse_mode: Optional[str] = None) -> Dict[str, Any]:
-        """إرسال صورة مباشرة مع الشرح إلى القناة أو المحادثة"""
         if len(caption) <= 1024:
             payload = {"chat_id": chat_id, "photo": photo, "caption": caption}
             if parse_mode:
@@ -268,7 +263,6 @@ class StandaloneTelegramEducationalBot:
             if res.get("ok"):
                 return res
 
-        # إذا تعذر أو كان الشرح طويلاً، نرسل الصورة ثم النص كاملاً
         res_photo = self.tg_request("sendPhoto", {"chat_id": chat_id, "photo": photo})
         if caption:
             self.send_msg(chat_id, caption, parse_mode=parse_mode)
@@ -285,7 +279,6 @@ class StandaloneTelegramEducationalBot:
         return any(kw in text for kw in AD_KEYWORDS)
 
     def clean_text_from_sources(self, text: str) -> str:
-        """تنظيف كامل لأي إشارات للمصادر أو القنوات الأصلية برمجياً"""
         cleaned = re.sub(r'@[a-zA-Z0-9_]+', '', text)
         cleaned = re.sub(r'https?://t\.me/[^\s]+', '', cleaned)
         cleaned = re.sub(r'(وفقاً لـ?|بحسب|نقلاً عن|المصدر:|قناة|حساب)\s+[^\s\n]+', '', cleaned)
@@ -315,7 +308,6 @@ class StandaloneTelegramEducationalBot:
             "User-Agent": "TelegramEducationalBot/2.0"
         }
 
-        # 1. محاولة DeepSeek-V4.1-Flash
         try:
             data_bytes = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=data_bytes, headers=headers)
@@ -327,7 +319,6 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             logging.warning(f"ملاحظة في اتصال نموذج الذكاء الأساسي {PRIMARY_MODEL}: {e}")
 
-        # 2. محاولة النموذج البديل auto
         try:
             payload["model"] = FALLBACK_MODEL
             data_bytes = json.dumps(payload).encode("utf-8")
@@ -340,7 +331,6 @@ class StandaloneTelegramEducationalBot:
         except Exception as e:
             logging.warning(f"ملاحظة في اتصال النموذج البديل {FALLBACK_MODEL}: {e}")
 
-        # 3. صياغة محلية ذكية وأصلية (بدون أي ذكر للمصدر)
         lines = [l.strip() for l in clean_input.split("\n") if l.strip() and not l.startswith("http")]
         title = lines[0] if lines else "تحديث جامعي وأكاديمي هام"
         bullets = "\n".join([f"• {l}" for l in lines[1:6]]) if len(lines) > 1 else f"• {clean_input}"
@@ -395,13 +385,14 @@ class StandaloneTelegramEducationalBot:
 🎛 **لوحة التحكم بمحرر المحتوى التعليمي الجامعي الذكي**:
 • حالة النشر التلقائي: {status_badge}
 • قنوات النشر المستهدفة: `{channels_str}`
+• القراءة اللحظية للقنوات: ✅ مفعلة (channel_post فوري)
 • دعم الصور: ✅ مفعل لنشر الصور الأصلية بدقة عالية
 • حماية الهوية: ✅ ممنوع ذكر أي مصادر أو قنوات سابقة
 • النموذج الفعال: `{PRIMARY_MODEL}`
 • مصادر المراقبة: {len(self.sources.get('sources', []))} مصادر
 
 👇 **اختر من الأزرار أدناه للتحكم السريع:**
-(أو وجّه أي رسالة من قناتك ليتعرف عليها البوت فوراً)"""
+(أو وجّه أي رسالة من أي قناة ليتعرف عليها البوت فوراً)"""
         self.send_msg(chat_id, text, self.get_control_panel_inline_keyboard())
 
     def show_channels_management(self, chat_id: int):
@@ -429,6 +420,106 @@ class StandaloneTelegramEducationalBot:
             ]
         }
         self.send_msg(chat_id, "\n".join(lines), inline_kb)
+
+    # ----------------- معالجة أحداث القنوات التلقائية (Channel Posts) -----------------
+    def handle_channel_post(self, post: Dict[str, Any]):
+        """معالجة فورية لحظية لأي منشور ينزل في أي قناة يتواجد فيها البوت"""
+        chat = post.get("chat", {})
+        chat_id = chat.get("id")
+        chat_username = chat.get("username")
+        chat_title = chat.get("title", "القناة")
+        msg_id = post.get("message_id")
+
+        text = post.get("text", "") or post.get("caption", "")
+        photo_id = None
+        if "photo" in post and isinstance(post["photo"], list) and len(post["photo"]) > 0:
+            photo_id = post["photo"][-1]["file_id"]
+
+        # 1. منع التكرار الحلقي: إذا كان المنشور وارداً من إحدى قنوات النشر المستهدفة، نتجاهله فوراً
+        target_channels = self.get_target_channels()
+        normalized_targets = [str(c).lower().replace("https://t.me/", "").strip() for c in target_channels]
+
+        current_chat_identifiers = [str(chat_id)]
+        if chat_username:
+            current_chat_identifiers.append(f"@{chat_username.lower()}")
+            current_chat_identifiers.append(chat_username.lower())
+
+        is_destination = any(ident in normalized_targets for ident in current_chat_identifiers)
+        if is_destination:
+            logging.info(f"تجاهل منشور وارد من قناة النشر [{chat_title}] منعاً للتكرار.")
+            return
+
+        # 2. فحص هل القناة ضمن المصادر أو تسجيلها تلقائياً
+        srcs = self.sources.get("sources", [])
+        is_monitored = False
+        for s in srcs:
+            t = str(s.get("target", "")).lower().replace("https://t.me/", "").replace("s/", "").strip()
+            if any(ident == t for ident in current_chat_identifiers):
+                is_monitored = True
+                break
+
+        if not is_monitored:
+            target_name = f"@{chat_username}" if chat_username else str(chat_id)
+            logging.info(f"اكتشاف مصدر جديد تلقائياً لأن البوت متواجد في القناة: {chat_title} ({target_name})")
+            self.sources.setdefault("sources", []).append({
+                "id": f"src_{int(time.time())}",
+                "type": "telegram",
+                "target": target_name,
+                "title": chat_title,
+                "priority": "high",
+                "rule": "official",
+                "keywords": [],
+                "blacklist": ["إعلان ممول"],
+                "enabled": True,
+                "lastPostId": str(msg_id)
+            })
+            self.save_json(SOURCES_FILE, self.sources)
+
+        # 3. فحص مانع التكرار
+        seen_keys = self.state.setdefault("seen_post_ids", [])
+        post_key = f"{chat_id}:{msg_id}"
+        post_hash = hashlib.md5((text[:80]).encode("utf-8")).hexdigest() if text else ""
+        seen_hashes = self.state.setdefault("seen_hashes", [])
+
+        if post_key in seen_keys or (post_hash and post_hash in seen_hashes):
+            logging.info(f"تجاهل منشور تمت معالجته مسبقاً: {post_key}")
+            return
+
+        seen_keys.append(post_key)
+        if post_hash:
+            seen_hashes.append(post_hash)
+        if len(seen_keys) > 500:
+            seen_keys.pop(0)
+        if len(seen_hashes) > 500:
+            seen_hashes.pop(0)
+
+        self.save_json(STATE_FILE, self.state)
+
+        logging.info(f"⚡️ منشور جديد فوري وارد من القناة [{chat_title}]: {msg_id}")
+        self.publish_fresh_post(text, photo_id)
+
+    def handle_my_chat_member(self, member_update: Dict[str, Any]):
+        """عند إضافة البوت إلى قناة أو مجموعة جديدة، يسأل المشرف بنقرة زر"""
+        chat = member_update.get("chat", {})
+        new_status = member_update.get("new_chat_member", {}).get("status")
+        chat_title = chat.get("title", "القناة")
+        chat_username = chat.get("username")
+        chat_id = chat.get("id")
+        target_ident = f"@{chat_username}" if chat_username else str(chat_id)
+
+        if new_status in ["administrator", "member"]:
+            kb = {
+                "inline_keyboard": [
+                    [{"text": f"📢 تعيين كقناة نشر (للنشر فيها)", "callback_data": f"confirm_add_ch_{target_ident}"}],
+                    [{"text": f"📥 تعيين كمصدر مراقبة (للقراءة منها)", "callback_data": f"confirm_add_src_{target_ident}"}]
+                ]
+            }
+            notif = f"""🎉 **تمت إضافة البوت إلى قناة/مجموعة جديدة!**
+📢 الاسم: **{chat_title}**
+🆔 المعرف: `{target_ident}`
+
+👇 اختر كيف تريد استخدام هذه القناة:"""
+            self.send_msg(ADMIN_ID, notif, kb)
 
     def handle_callback_query(self, cb: Dict[str, Any]):
         cb_id = cb["id"]
@@ -463,6 +554,10 @@ class StandaloneTelegramEducationalBot:
         elif data.startswith("confirm_add_ch_"):
             target_ch = data.replace("confirm_add_ch_", "")
             self.add_single_target_channel(chat_id, target_ch)
+
+        elif data.startswith("confirm_add_src_"):
+            target_src = data.replace("confirm_add_src_", "")
+            self.process_add_source_input(chat_id, target_src)
 
         elif data == "panel_add_source":
             self.user_waiting_state[chat_id] = "waiting_for_new_source"
@@ -539,14 +634,12 @@ class StandaloneTelegramEducationalBot:
         from_user = msg.get("from", {})
         text = msg.get("text", "") or msg.get("caption", "")
 
-        # استخراج الصورة المرفقة إن وجدت
         photo_id = None
         if "photo" in msg and isinstance(msg["photo"], list) and len(msg["photo"]) > 0:
             photo_id = msg["photo"][-1]["file_id"]
 
         logging.info(f"رسالة واردة من {from_user.get('id')} (@{from_user.get('username')}): {text[:60]}")
 
-        # التحقق من صلاحية المشرف
         if not self.is_authorized(from_user):
             sender_id = from_user.get("id")
             sender_user = from_user.get("username") or "غير محدد"
@@ -572,14 +665,15 @@ class StandaloneTelegramEducationalBot:
             prompt_kb = {
                 "inline_keyboard": [
                     [{"text": f"✅ اعتماد [{ch_title}] كقناة نشر", "callback_data": f"confirm_add_ch_{ch_target}"}],
-                    [{"text": "✍️ إعادة صياغة هذا المنشور فقط", "callback_data": "panel_test"}]
+                    [{"text": f"📥 اعتماد [{ch_title}] كمصدر مراقبة", "callback_data": f"confirm_add_src_{ch_target}"}],
+                    [{"text": "✍️ صياغة ونشر هذا المنشور فقط", "callback_data": "panel_test"}]
                 ]
             }
             detect_msg = f"""🎉 **تم التعرف على قناتك تلقائياً من المنشور الموجه!**
 📢 القناة: **{ch_title}**
 🆔 المعرف: `{ch_target}`
 
-هل تريد اعتمادها كقناة نشر يقوم البوت بالنشر التلقائي فيها؟"""
+اختر الإجراء المطلوب:"""
             self.send_msg(chat_id, detect_msg, prompt_kb)
             return
 
@@ -637,6 +731,7 @@ class StandaloneTelegramEducationalBot:
 • المشرف: @{ADMIN_USERNAME} ({ADMIN_ID})
 • حالة النشر: {'⏸ متوقف مؤقتاً' if self.is_paused else '🟢 نشط 24/7'}
 • قنوات النشر: {len(channels)} قنوات (`{', '.join(channels) if channels else 'لم تُحدد بعد'}`)
+• الاستماع الفوري للقنوات: ✅ مفعل (channel_post)
 • دعم الصور: ✅ مفعل لنشر الصور الأصلية
 • حماية المصدر: ✅ لا يتم ذكر أي مصدر أصلي نهائياً
 • المعالج: {st.get('processed_count', 0)} منشور
@@ -680,7 +775,6 @@ class StandaloneTelegramEducationalBot:
             self.send_msg(chat_id, f"{'⏸ تم إيقاف النشر مؤقتاً.' if self.is_paused else '▶️ تم استئناف النشر التلقائي.'}")
             return
 
-        # تعديل الإعلان
         if clean_text.startswith("/set_ad"):
             new_ad = clean_text.replace("/set_ad", "").strip()
             if new_ad:
@@ -690,7 +784,6 @@ class StandaloneTelegramEducationalBot:
                 self.send_msg(chat_id, "يرجى كتابة نص الإعلان بعد الأمر، مثال:\n`/set_ad إعلانك هنا`")
             return
 
-        # تعديل التعليمات
         if clean_text.startswith("/set_instruction"):
             new_ins = clean_text.replace("/set_instruction", "").strip()
             if new_ins:
@@ -700,7 +793,6 @@ class StandaloneTelegramEducationalBot:
                 self.send_msg(chat_id, "يرجى كتابة نص التعليمات بعد الأمر.")
             return
 
-        # حذف مصدر
         if clean_text.startswith("/remove_source"):
             target = clean_text.replace("/remove_source", "").strip()
             srcs = self.sources.get("sources", [])
@@ -709,7 +801,6 @@ class StandaloneTelegramEducationalBot:
             self.send_msg(chat_id, f"✅ تم حذف المصدر `{target}` بنجاح!")
             return
 
-        # حذف قناة نشر
         if clean_text.startswith("/remove_channel"):
             target = clean_text.replace("/remove_channel", "").strip()
             current = self.get_target_channels()
@@ -723,8 +814,6 @@ class StandaloneTelegramEducationalBot:
             self.rephrase_and_dispatch(chat_id, clean_text, photo_id)
 
     def process_multiple_channels_input(self, chat_id: int, channels_input: str):
-        """معالجة وإضافة قناة أو عدة قنوات نشر دفعة واحدة والتحقق من الصلاحيات"""
-        # التقسيم بالفواصل أو المسافات أو الأسطر
         raw_items = re.split(r'[\s,;\n]+', channels_input.strip())
         results = []
         current = self.get_target_channels()
@@ -736,7 +825,6 @@ class StandaloneTelegramEducationalBot:
             if not clean.startswith("@") and not clean.startswith("-100"):
                 clean = "@" + clean
 
-            # فحص القناة عبر API
             check = self.tg_request("getChat", {"chat_id": clean})
             if check.get("ok"):
                 title = check.get("result", {}).get("title", clean)
@@ -744,8 +832,6 @@ class StandaloneTelegramEducationalBot:
                     current.append(clean)
                 results.append(f"✅ **{title}** (`{clean}`): تم التحقق والربط بنجاح!")
             else:
-                desc = check.get("description", "تعذر التحقق")
-                # إذا كانت القناة غير موجودة أو ينقصها الآدمن نحفظها وننبهه
                 if clean not in current:
                     current.append(clean)
                 results.append(f"⚠️ **{clean}**: تم حفظها (تأكد من إضافة البوت @admiuin_bot مشرفاً Admin في القناة مع صلاحية النشر).")
@@ -771,7 +857,6 @@ class StandaloneTelegramEducationalBot:
         self.send_msg(chat_id, msg, self.get_main_reply_keyboard())
 
     def test_publish_to_all_channels(self, chat_id: int):
-        """إرسال منشور تجريبي حقيقي لاختبار صلاحيات البوت في كافة القنوات المعتمدة"""
         channels = self.get_target_channels()
         if not channels:
             self.send_msg(chat_id, "⚠️ لا توجد قنوات نشر مضافة حالياً لاختبارها! اضغط على زر `📢 إدارة قنوات النشر` لإضافة قناتك أولاً.")
@@ -839,7 +924,7 @@ class StandaloneTelegramEducationalBot:
             ch_name = target.replace("@", "")
             try:
                 url = f"https://t.me/s/{ch_name}"
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
                 with urllib.request.urlopen(req, context=ssl_ctx, timeout=8) as resp:
                     html = resp.read().decode("utf-8")
                     matches = re.findall(r'data-post=\"([^\"]+)\"', html)
@@ -870,15 +955,13 @@ class StandaloneTelegramEducationalBot:
 • العنوان: {title}
 • نقطة البداية: تم تثبيتها عند آخر منشور حالي (لن يتم تكرار أو نشر أي منشورات قديمة 🛡)
 
-سيقوم البوت بمراقبة الجديد فقط ونشره في قنواتك فور صدوره!"""
+💡 **نصيحة للمراقبة الفورية:** للحصول على المنشورات في نفس ثانية صدورها، أضف البوت @admiuin_bot كعضو أو مشرف في القناة وسيقوم بقراءة التحديثات فوراً عبر channel_post!"""
         self.send_msg(chat_id, confirm_msg, self.get_main_reply_keyboard())
 
     def rephrase_and_dispatch(self, chat_id: int, raw_text: str, photo: Optional[str] = None):
-        """صياغة المنشور ونشره في كافة القنوات المعتمدة دون ذكر أي مصدر"""
         self.state["processed_count"] = self.state.get("processed_count", 0) + 1
         channels = self.get_target_channels()
 
-        # 1. فحص إعلان المنافس
         if raw_text and self.is_competitor_ad(raw_text):
             self.state["ad_replaced_count"] = self.state.get("ad_replaced_count", 0) + 1
             self.save_json(STATE_FILE, self.state)
@@ -899,14 +982,12 @@ class StandaloneTelegramEducationalBot:
             self.send_msg(chat_id, reply)
             return
 
-        # 2. الصياغة بالذكاء الاصطناعي
         self.send_msg(chat_id, "⏳ جاري الصياغة الأكاديمية الذكية والنشر الحصري...")
         rephrased = self.call_ai(raw_text or "إعلان جامعي هام", self.custom_instructions)
 
         self.state["forwarded_count"] = self.state.get("forwarded_count", 0) + 1
         self.save_json(STATE_FILE, self.state)
 
-        # 3. النشر داخل كافة القنوات المعتمدة
         published_count = 0
         for ch in channels:
             if photo:
@@ -918,7 +999,6 @@ class StandaloneTelegramEducationalBot:
                 if res.get("ok"):
                     published_count += 1
 
-        # 4. إشعار المشرف
         status_note = f"✅ تم النشر في {published_count} قنوات بنجاح 📸" if published_count > 0 else "⚠️ المنشور جاهز (أضف قنواتك عبر زر '📢 إدارة قنوات النشر' ليتم النشر التلقائي فيها)"
         result_msg = f"""✨ **المنشور التعليمي (أصلي وحصري 100%):**
 ━━━━━━━━━━━━━━━━━━━
@@ -931,12 +1011,12 @@ class StandaloneTelegramEducationalBot:
         else:
             self.send_msg(chat_id, result_msg)
 
-    # ----------------- مراقب المصادر الآلي في الخلفية -----------------
+    # ----------------- مراقب المصادر الآلي في الخلفية (Fallback Web Scraper) -----------------
     def monitor_sources_loop(self):
-        logging.info("🚀 تشغيل مراقب المصادر التلقائي ومنع المنشورات القديمة...")
+        logging.info("🚀 تشغيل مراقب المصادر التلقائي عبر الويب وRSS...")
         while True:
             try:
-                time.sleep(50)
+                time.sleep(45)
                 if self.is_paused:
                     continue
 
@@ -947,21 +1027,21 @@ class StandaloneTelegramEducationalBot:
 
                     s_type = s.get("type")
                     if s_type == "telegram":
-                        self.check_telegram_channel(s)
+                        self.check_telegram_channel_web(s)
                     elif s_type == "rss":
                         self.check_rss_feed(s)
 
             except Exception as e:
                 logging.error(f"خطأ في دورة مراقبة المصادر: {e}")
 
-    def check_telegram_channel(self, src: Dict[str, Any]):
+    def check_telegram_channel_web(self, src: Dict[str, Any]):
         channel_name = src.get("target", "").replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").strip()
         if not channel_name:
             return
 
         url = f"https://t.me/s/{channel_name}"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
             with urllib.request.urlopen(req, context=ssl_ctx, timeout=12) as resp:
                 html = resp.read().decode("utf-8")
                 blocks = html.split('class="tgme_widget_message_wrap')
@@ -997,7 +1077,6 @@ class StandaloneTelegramEducationalBot:
                 if not last_known:
                     src["lastPostId"] = latest_post_id
                     self.save_json(SOURCES_FILE, self.sources)
-                    logging.info(f"تمت تهيئة المصدر {src.get('target')} عند {latest_post_id} - لن يتم نشر منشورات قديمة.")
                     return
 
                 if latest_post_id != last_known:
@@ -1021,11 +1100,11 @@ class StandaloneTelegramEducationalBot:
                     self.save_json(SOURCES_FILE, self.sources)
                     self.save_json(STATE_FILE, self.state)
 
-                    logging.info(f"⚡️ منشور جديد حقيقي في {src.get('target')}: {latest_post_id}")
+                    logging.info(f"⚡️ منشور جديد حقيقي عبر الويب في {src.get('target')}: {latest_post_id}")
                     self.publish_fresh_post(latest_post.get("text", ""), latest_post.get("photo"))
 
         except Exception as e:
-            logging.debug(f"فحص القناة {channel_name}: {e}")
+            logging.debug(f"فحص القناة ويب {channel_name}: {e}")
 
     def check_rss_feed(self, src: Dict[str, Any]):
         url = src.get("target", "")
@@ -1062,7 +1141,6 @@ class StandaloneTelegramEducationalBot:
         self.state["processed_count"] = self.state.get("processed_count", 0) + 1
         channels = self.get_target_channels()
 
-        # 1. فحص إعلان المنافسين
         if raw_text and self.is_competitor_ad(raw_text):
             self.state["ad_replaced_count"] = self.state.get("ad_replaced_count", 0) + 1
             self.save_json(STATE_FILE, self.state)
@@ -1077,20 +1155,17 @@ class StandaloneTelegramEducationalBot:
             self.send_msg(ADMIN_ID, notif)
             return
 
-        # 2. الصياغة الاحترافية الحصرية
         clean_rephrased = self.call_ai(raw_text, self.custom_instructions)
 
         self.state["forwarded_count"] = self.state.get("forwarded_count", 0) + 1
         self.save_json(STATE_FILE, self.state)
 
-        # 3. النشر في كافة القنوات المعتمدة
         for ch in channels:
             if photo_url:
                 self.send_photo(ch, photo_url, clean_rephrased)
             else:
                 self.send_msg(ch, clean_rephrased)
 
-        # 4. تنبيه الآدمن
         admin_notif = f"""📢 **تم النشر الحصري في قنواتك ({len(channels)}):**
 ━━━━━━━━━━━━━━━━━━━
 {clean_rephrased}
@@ -1100,10 +1175,10 @@ class StandaloneTelegramEducationalBot:
         else:
             self.send_msg(ADMIN_ID, admin_notif)
 
-    # ----------------- تشغيل البوت -----------------
+    # ----------------- الحلقة الرئيسية وتشغيل البوت -----------------
     def run(self):
         logging.info("=" * 60)
-        logging.info("  محرر المحتوى التعليمي الجامعي الذكي (Multi-Channel Publisher)")
+        logging.info("  محرر المحتوى التعليمي الجامعي الذكي (Real-Time Channel Engine)")
         logging.info(f"  البوت: @admiuin_bot | المشرف: @{ADMIN_USERNAME} ({ADMIN_ID})")
         channels = self.get_target_channels()
         logging.info(f"  قنوات النشر ({len(channels)}): {', '.join(channels) if channels else 'لم تحدد بعد'}")
@@ -1113,30 +1188,35 @@ class StandaloneTelegramEducationalBot:
         threading.Thread(target=self.monitor_sources_loop, daemon=True).start()
 
         try:
-            welcome_text = f"""🚀 **تم تشغيل محرر المحتوى التعليمي بنجاح!**
+            welcome_text = f"""🚀 **تم ترقية محرك قراءة ونشر القنوات الفوري بنجاح!**
 👑 المشرف المعتمد: @{ADMIN_USERNAME} (معرف: `{ADMIN_ID}`)
 📢 قنوات النشر المعتمدة: `{', '.join(channels) if channels else 'لم تُحدد بعد'}`
-📸 دعم نشر الصور: مفعل بدقة عالية 
-🛡 منع المنشورات القديمة: مفعل بدقة
+⚡️ القراءة اللحظية: مفعلة الآن (يدعم channel_post الفوري بدون أي تأخير!)
+📸 دعم الصور: مفعل بدقة عالية
 
-💡 **لتحديد قنوات النشر بسهولة:**
-• اضغط زر: `📢 إدارة قنوات النشر`
-• أو وجّه (Forward) أي رسالة من قناتك إلى هنا وسيتعرف عليها البوت فوراً!"""
+أرسل /start أو استخدم الأزرار للتحكم المباشر."""
             self.send_msg(ADMIN_ID, welcome_text, self.get_main_reply_keyboard())
         except Exception as e:
             logging.warning(f"ملاحظة في إشعار الآدمن: {e}")
 
         offset = 0
-        logging.info("🎧 جاري الاستماع لتحديثات وأوامر تيليجرام...")
+        logging.info("🎧 جاري الاستماع لتحديثات وأوامر وقنوات تيليجرام (All Updates)...")
         while True:
             try:
-                res = self.tg_request(f"getUpdates?offset={offset}&timeout=20")
+                res = self.tg_request(f"getUpdates?offset={offset}&timeout=20&allowed_updates=[\"message\",\"channel_post\",\"edited_channel_post\",\"callback_query\",\"my_chat_member\"]")
                 if res.get("ok"):
                     updates = res.get("result", [])
                     for u in updates:
                         offset = u["update_id"] + 1
+
                         if "callback_query" in u:
                             self.handle_callback_query(u["callback_query"])
+                        elif "channel_post" in u:
+                            self.handle_channel_post(u["channel_post"])
+                        elif "edited_channel_post" in u:
+                            self.handle_channel_post(u["edited_channel_post"])
+                        elif "my_chat_member" in u:
+                            self.handle_my_chat_member(u["my_chat_member"])
                         elif "message" in u:
                             self.handle_message(u["message"])
 
