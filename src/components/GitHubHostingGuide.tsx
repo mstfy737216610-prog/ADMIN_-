@@ -111,16 +111,30 @@ git push -u origin main`;
         <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
           <div className="flex items-center gap-2 text-sky-400 font-bold text-xs sm:text-sm">
             <Smartphone className="w-4 h-4" />
-            <span>خطوات الربط في تطبيق بوت بزنس (Bots.Business):</span>
+            <span>حل خطأ بوت بزنس (ملف bot.json غير موجود) والربط:</span>
+          </div>
+
+          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-200 leading-relaxed">
+            <strong>⚠️ سبب رسالة Bots.Business:</strong> تطبيق بوت بزنس يبحث عن ملف إلزامي اسمه <code className="text-white font-mono bg-amber-950/60 px-1.5 py-0.5 rounded">bot.json</code> ومجلد <code className="text-white font-mono bg-amber-950/60 px-1.5 py-0.5 rounded">commands/</code> في المستودع الرئيسي. قمنا بإنشائهما وضمهما داخل الحزمة!
+          </div>
+
+          <div className="text-xs text-slate-300 space-y-2">
+            <p><strong>مستودع GitHub الخاص بك المربوط:</strong></p>
+            <div className="p-2 bg-slate-900 border border-slate-800 rounded-lg font-mono text-[11px] text-sky-300 flex items-center justify-between" dir="ltr">
+              <span>https://github.com/mstfy737216610-prog/ADMIN_-.git</span>
+              <button
+                onClick={() => handleCopy('https://github.com/mstfy737216610-prog/ADMIN_-.git', 'repo_url')}
+                className="text-xs text-slate-400 hover:text-white px-2 py-1 bg-slate-800 rounded ml-2"
+              >
+                {copiedCmd === 'repo_url' ? 'تم النسخ!' : 'نسخ'}
+              </button>
+            </div>
           </div>
 
           <ol className="list-decimal list-inside space-y-2 text-xs text-slate-300 leading-relaxed pr-1">
-            <li>قم بتثبيت تطبيق <strong className="text-white">Bots.Business</strong> من متجر Play أو App Store، أو ادخل على <a href="https://bots.business" target="_blank" rel="noreferrer" className="text-sky-400 underline font-mono">bots.business</a>.</li>
-            <li>سجّل دخولك بحساب Google أو GitHub.</li>
-            <li>اضغط على <strong>New Bot</strong> ثم اختر <strong>Git Repository</strong>.</li>
-            <li>ضع رابط مستودعك على جيت هب (مثال: <code className="text-emerald-300 font-mono">https://github.com/user/telegram-edu-bot</code>).</li>
-            <li>سيتعرف التطبيق تلقائياً على ملف التشغيل <code className="text-sky-300 font-mono">main.py</code> ومتطلبات <code className="text-sky-300 font-mono">requirements.txt</code>.</li>
-            <li>اضغط <strong>Start Bot</strong>، وستصلك رسالة فورية في التيليجرام من البوت تفيد ببدء العمل!</li>
+            <li>قم بتنزيل حزمة <strong>ZIP</strong> المحدثة بالأعلى (تحتوي على <code className="text-sky-300 font-mono">bot.json</code> ومجلد <code className="text-sky-300 font-mono">commands/</code>).</li>
+            <li>افتح مستودعك على GitHub: <a href="https://github.com/mstfy737216610-prog/ADMIN_-" target="_blank" rel="noreferrer" className="text-sky-400 underline font-mono">mstfy737216610-prog/ADMIN_-</a> واضغط على <strong>Add file &gt; Upload files</strong> وارفع الملفات مباشرة.</li>
+            <li>ارجع لتطبيق <strong className="text-white">Bots.Business</strong> واضغط على زر <strong>Sync Git</strong> أو أعد الاستيراد. سيتعرف التطبيق فوراً على البوت ويعمل بنجاح دون أي خطأ!</li>
           </ol>
         </div>
 
