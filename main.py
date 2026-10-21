@@ -2,12 +2,17 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-البوت الأساسي لإدارة الجلسات والحملات (Main Telegram Bot & Session Manager)
+المرحلة الأولى: البوت الأساسي وإدارة الجلسات عبر Pyrogram
+(Phase 1: Pyrogram Bot & In-Memory Session Login Flow)
 ================================================================================
-متوافق مع:
-- استضافة البوتات المجانية (Free Bot Hosts: Render, Koyeb, Heroku, Railway, Termux, VPS)
-- تيليجرام بوت للأعمال (Telegram Business & Bot API)
-- إدارة الجلسات المستقلة لكل مستخدم (Multi-User Telethon StringSession)
+الوظيفة:
+1. يستقبل أوامر المستخدمين (/start) ويعرض أزراراً تفاعلية للتحكم.
+2. يدير عملية تسجيل الدخول عبر عميل مؤقت في الذاكرة (Client in_memory=True).
+3. يطلب رقم الهاتف، ثم كود التحقق (OTP) بدلاً من input() عبر دالة ask_user().
+4. يتعامل مع التحقق بخطوتين (SESSION_PASSWORD_NEEDED).
+5. يستخرج الجلسة النصية (session_string = await app.export_session_string()).
+6. يحفظ الجلسة في قاعدة البيانات database/data.db عبر save_session_to_db().
+7. يحتوي على خادم فحص صحة خفيف (Keep-Alive) لتشغيل البوت 24/7 في الاستضافات المجانية.
 ================================================================================
 """
 
@@ -18,27 +23,33 @@ import time
 import json
 import asyncio
 import logging
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, Any, Optional
 
 # استيراد طبقة قاعدة البيانات
 import database as db
 
-# استيراد حزمة Telethon
+# استيراد مكتبة Pyrogram
 try:
-    from telethon import TelegramClient, events, Button
-    from telethon.sessions import StringSession
-    from telethon.errors import (
-        SessionPasswordNeededError,
-        PhoneCodeInvalidError,
-        PhoneCodeExpiredError,
-        PhoneNumberInvalidError,
-        PasswordHashInvalidError
+    from pyrogram import Client, filters
+    from pyrogram.types import (
+        InlineKeyboardMarkup,
+        InlineKeyboardButton,
+        Message,
+        CallbackQuery
+    )
+    from pyrogram.errors import (
+        SessionPasswordNeeded,
+        PhoneCodeInvalid,
+        PhoneCodeExpired,
+        PhoneNumberInvalid,
+        PasswordHashInvalid,
+        FloodWait
     )
 except ImportError:
-    print("❌ مكتبة Telethon غير مثبتة! يرجى تثبيتها عبر: pip install telethon aiohttp")
-    sys.exit(1)
+    # لتوضيح التثبيت في حال تشغيل الكود في بيئة محلية جديدة
+    print("⚠️ مكتبة Pyrogram غير مثبتة. يرجى تثبيتها عبر: pip install pyrogram tgcrypto")
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -47,26 +58,23 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 
-# الإعدادات ومفاتيح تيليجرام
+# الإعدادات العامة لتيليجرام
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8901693218:AAEOQmHMZLy-xaPbTUMq1KGhDwp1l0wFWP4").strip()
 API_ID = int(os.getenv("TELEGRAM_API_ID", "2040"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "b18441a1ff607e10a989891a5462e627")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "7607633343"))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "M_S_F_G").replace("@", "").strip()
 
-# منفذ خادم Keep-Alive للاستضافات المجانية (Render, Railway, Heroku)
+# منفذ خادم Keep-Alive للاستضافات المجانية (Render, Railway, Heroku, Free Bot Host)
 PORT = int(os.getenv("PORT", os.getenv("KEEPALIVE_PORT", "8088")))
 
-# حالة تسجيل دخول المستخدمين المؤقتة في الذاكرة
-# user_id -> {"step": str, "phone": str, "client": TelegramClient, "phone_code_hash": str}
-AUTH_STATES: Dict[int, Dict[str, Any]] = {}
-
-# حالات انتظار المدخلات الأخرى (مثل إدخال اسم الحملة، قناة الهدف، المصدر، الإعلان)
-INPUT_STATES: Dict[int, Dict[str, Any]] = {}
+# مصفوفة الانتظار غير المتزامنة للمحادثات (بديل input عبر bot.ask)
+# user_id -> asyncio.Future
+PENDING_ANSWERS: Dict[int, asyncio.Future] = {}
 
 
 # ==============================================================================
-# خادم فحص الصحة للحفاظ على تشغيل البوت في الاستضافات المجانية (Keep-Alive Server)
+# خادم فحص الصحة لمنع إيقاف الاستضافات المجانية (Keep-Alive Server)
 # ==============================================================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -74,22 +82,22 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_header("Content-type", "application/json; charset=utf-8")
         self.end_headers()
         stats = db.get_stats()
-        response_data = {
+        res = {
             "status": "online",
             "bot": "@admiuin_bot",
-            "admin": f"@{ADMIN_USERNAME}",
+            "framework": "Pyrogram Multi-Session Engine",
             "stats": stats,
             "timestamp": int(time.time()),
-            "message": "خادم محرر المحتوى التعليمي واليوزربوت يعمل بنجاح 24/7"
+            "message": "خادم اليوزربوت ومحرر المحتوى يعمل بنجاح 24/7"
         }
-        self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode("utf-8"))
+        self.wfile.write(json.dumps(res, ensure_ascii=False).encode("utf-8"))
 
     def log_message(self, format, *args):
         pass
 
 
 def run_keepalive_http():
-    """تشغيل خادم HTTP في خيط منفصل للاستضافات المجانية لتجنب السكون"""
+    """تشغيل خادم HTTP في خيط خلفي للاستضافات المجانية"""
     for p in [PORT, 8088, 8089, 8090, 8000]:
         try:
             server = HTTPServer(("0.0.0.0", p), HealthCheckHandler)
@@ -101,464 +109,394 @@ def run_keepalive_http():
 
 
 # ==============================================================================
-# إنشاء عميل البوت عبر Telethon
+# دالة استقبال الرد بدلاً من input() عبر await bot.ask()
 # ==============================================================================
-bot = TelegramClient('bot_session', API_ID, API_HASH)
+async def ask_user(bot_client: Client, chat_id: int, prompt_text: str, timeout: int = 300) -> str:
+    """
+    إرسال رسالة للمستخدم وانتظار رده القادم بشكل غير متزامن (Asynchronous Conversation Handler)
+    هذه الدالة تستبدل input() لكي لا يتم حظر السيرفر، وتعمل داخل تيليجرام مباشرة.
+    """
+    await bot_client.send_message(chat_id, prompt_text)
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    PENDING_ANSWERS[chat_id] = future
+
+    try:
+        reply_message: Message = await asyncio.wait_for(future, timeout=timeout)
+        return reply_message.text.strip()
+    finally:
+        PENDING_ANSWERS.pop(chat_id, None)
 
 
 # ==============================================================================
-# لوحات المفاتيح والأزرار التفاعلية
+# 2. دالة تسجيل الدخول واستخراج الجلسة (الكود الأساسي المطلوب بدقة)
 # ==============================================================================
-def get_main_keyboard(has_session: bool):
-    """لوحة التحكم الرئيسية"""
+async def login_and_get_session(bot_client: Client, user_id: int, chat_id: int, phone_number: str) -> Optional[str]:
+    """
+    تسجيل الدخول واستخراج الجلسة النصية عبر عميل Pyrogram مؤقت في الذاكرة:
+    1. إنشاء عميل مؤقت في الذاكرة (Client in_memory=True).
+    2. الاتصال وإرسال كود التحقق (send_code).
+    3. طلب الكود من المستخدم عبر البوت (ask_user) بدلاً من input().
+    4. تسجيل الدخول (sign_in) والتعامل مع 2FA (check_password).
+    5. استخراج الجلسة (export_session_string) وحفظها في قاعدة البيانات عبر save_session_to_db().
+    """
+    clean_phone = re.sub(r'[\s\-\(\)]', '', phone_number)
+    if not clean_phone.startswith("+"):
+        clean_phone = "+" + clean_phone
+
+    logging.info(f"📲 بدء تسجيل الدخول للرقم: {clean_phone} (معرف المستخدم: {user_id})")
+
+    # إنشاء عميل مؤقت في الذاكرة (in_memory=True) لعدم حفظ ملفات على السيرفر
+    app = Client(
+        "::memory::",
+        api_id=API_ID,
+        api_hash=API_HASH,
+        in_memory=True
+    )
+
+    await app.connect()
+
+    try:
+        # إرسال كود التحقق (OTP) إلى رقم هاتف المستخدم
+        await bot_client.send_message(chat_id, "⏳ جاري إرسال كود التحقق من سيرفرات تيليجرام...")
+        sent_code = await app.send_code(clean_phone)
+
+        # استقبال كود التحقق عبر واجهة البوت بدلاً من input()
+        code_prompt = f"""📩 **تم إرسال كود التحقق (OTP) إلى حسابك في تيليجرام!**
+📱 الرقم: `{clean_phone}`
+
+أرسل كود التحقق الآن هنا في المحادثة:
+(مثال: `12345` أو بأي صيغة)"""
+
+        entered_code = await ask_user(bot_client, chat_id, code_prompt, timeout=180)
+        clean_code = entered_code.replace(" ", "").replace("-", "")
+
+        try:
+            # تسجيل الدخول بالكود
+            await app.sign_in(clean_phone, sent_code.phone_code_hash, clean_code)
+        except Exception as e:
+            # إذا كان الحساب محمياً بكلمة مرور التحقق بخطوتين (2FA)
+            err_str = str(e).upper()
+            if "SESSION_PASSWORD_NEEDED" in err_str or isinstance(e, SessionPasswordNeeded):
+                password_prompt = """🔐 **حسابك محمي بالتحقق بخطوتين (2FA Password):**
+أرسل كلمة مرور حسابك السحابية الآن:"""
+                password = await ask_user(bot_client, chat_id, password_prompt, timeout=180)
+                await app.check_password(password)
+            else:
+                raise e
+
+        # استخراج الجلسة (Session String) وحفظها في قاعدة البيانات
+        session_string = await app.export_session_string()
+        db.save_session_to_db(user_id, clean_phone, session_string)
+
+        success_text = f"""🎉 **تم استخراج الجلسة وربط حسابك بنجاح!**
+📱 الرقم: `{clean_phone}`
+🔒 تم حفظ الـ `session_string` في قاعدة البيانات بأمان (`database/data.db`).
+🚀 أصبح عامل الزحف في الخلفية قادراً الآن على قراءة القنوات ونشر المنشورات كأنك أنت من يكتبها!"""
+
+        await bot_client.send_message(chat_id, success_text, reply_markup=get_main_keyboard(True))
+        return session_string
+
+    except PhoneCodeInvalid:
+        await bot_client.send_message(chat_id, "❌ كود التحقق الذي أدخلته غير صحيح. حاول مجدداً من زر تسجيل الدخول.", reply_markup=get_main_keyboard(False))
+    except PhoneCodeExpired:
+        await bot_client.send_message(chat_id, "⚠️ انتهت صلاحية كود التحقق. أعد المحاولة من جديد.", reply_markup=get_main_keyboard(False))
+    except PhoneNumberInvalid:
+        await bot_client.send_message(chat_id, "❌ رقم الهاتف غير صالح. تأكد من إدخال الرمز الدولي (مثال: `+966500000000`).", reply_markup=get_main_keyboard(False))
+    except PasswordHashInvalid:
+        await bot_client.send_message(chat_id, "❌ كلمة المرور غير صحيحة. حاول مرة أخرى.", reply_markup=get_main_keyboard(False))
+    except FloodWait as fw:
+        await bot_client.send_message(chat_id, f"⏳ تيليجرام يطلب الانتظار {fw.value} ثانية (FloodWait).", reply_markup=get_main_keyboard(False))
+    except asyncio.TimeoutError:
+        await bot_client.send_message(chat_id, "⌛️ انتهى وقت الانتظار دون إدخال الكود. اضغط زر تسجيل الدخول للبدء مجدداً.", reply_markup=get_main_keyboard(False))
+    except Exception as e:
+        logging.error(f"خطأ أثناء تسجيل الدخول: {e}")
+        await bot_client.send_message(chat_id, f"❌ حدث خطأ أثناء توثيق الحساب: {e}", reply_markup=get_main_keyboard(False))
+    finally:
+        try:
+            await app.disconnect()
+        except Exception:
+            pass
+    return None
+
+
+# ==============================================================================
+# أزرار البوت ولوحات المفاتيح التفاعلية
+# ==============================================================================
+def get_main_keyboard(has_session: bool) -> InlineKeyboardMarkup:
+    """بناء أزرار التحكم الرئيسية"""
     if has_session:
-        return [
-            [Button.inline("📢 إدارة الحملات وقنوات النشر", b"menu_campaigns")],
-            [Button.inline("➕ إنشاء حملة جديدة", b"menu_new_campaign"), Button.inline("📋 المصادر المراقبة", b"menu_sources")],
-            [Button.inline("🎯 إعلاني الخاص (المنافسين)", b"menu_ad"), Button.inline("⚙️ تعليمات الذكاء الاصطناعي", b"menu_prompt")],
-            [Button.inline("📊 إحصائيات النشاط", b"menu_stats"), Button.inline("🚪 تسجيل الخروج (حذف الجلسة)", b"menu_logout")]
-        ]
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 إدارة الحملات وقنوات النشر", callback_data="btn_campaigns")],
+            [InlineKeyboardButton("➕ إنشاء حملة جديدة", callback_data="btn_new_campaign"),
+             InlineKeyboardButton("📋 المصادر المراقبة", callback_data="btn_sources")],
+            [InlineKeyboardButton("🎯 إعلاني الخاص (المنافسين)", callback_data="btn_ad"),
+             InlineKeyboardButton("⚙️ تعليمات الذكاء الاصطناعي", callback_data="btn_prompt")],
+            [InlineKeyboardButton("📊 إحصائيات النشاط", callback_data="btn_stats"),
+             InlineKeyboardButton("🚪 تسجيل الخروج (حذف الجلسة)", callback_data="btn_logout")]
+        ])
     else:
-        return [
-            [Button.inline("📱 تسجيل الدخول (ربط الحساب باليوزربوت)", b"menu_login")],
-            [Button.inline("🔑 إدخال كود الجلسة مباشرة (StringSession)", b"menu_manual_session")],
-            [Button.inline("ℹ️ كيف يعمل النظام؟", b"menu_info")]
-        ]
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("📱 تسجيل الدخول (استخراج الجلسة ورقم الهاتف)", callback_data="btn_login")],
+            [InlineKeyboardButton("ℹ️ كيف يعمل اليوزربوت والذكاء الاصطناعي؟", callback_data="btn_info")]
+        ])
 
 
 # ==============================================================================
-# معالجة أوامر الرسائل النصية
+# إعداد عميل البوت عبر Pyrogram
 # ==============================================================================
-@bot.on(events.NewMessage(pattern=r"^/start"))
-async def start_handler(event):
-    user = await event.get_sender()
-    user_id = user.id
-    username = user.username or ""
-    first_name = user.first_name or "المستخدم"
+bot = Client(
+    "bot_app",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
+)
 
-    # تسجيل المستخدم في قاعدة البيانات
-    user_record = db.add_or_update_user(user_id, username=username, first_name=first_name)
-    has_session = bool(user_record and user_record.get("session_string") and len(user_record["session_string"]) > 15)
 
-    session_status = "🟢 حسابك مربوط وجلستك نشطة بنجاح!" if has_session else "🔴 لم تقم بربط حسابك بعد (سجل دخولك ليتمكن البوت من قراءة القنوات)."
+# 1. اعتراض أي رسالة قادمة إذا كان المستخدم بانتظار إدخال رد (bot.ask)
+@bot.on_message(filters.private & ~filters.command(["start", "help", "cancel"]))
+async def message_router_or_answer(client: Client, message: Message):
+    chat_id = message.chat.id
 
-    welcome_text = f"""👋 **أهلاً بك يا {first_name}!**
+    # إذا كان هناك طلب انتظار إجابة غير متزامن (Future)
+    if chat_id in PENDING_ANSWERS:
+        fut = PENDING_ANSWERS[chat_id]
+        if not fut.done():
+            fut.set_result(message)
+            return
 
-🤖 **محرر المحتوى التعليمي والجامعي الذكي (Multi-User Engine)**
-نظام النشر الآلي وإعادة الصياغة بالذكاء الاصطناعي عبر حسابك الخاص (Userbot).
+    # إذا أرسل المستخدم رقمه مباشرة لبدء التسجيل
+    txt = message.text.strip() if message.text else ""
+    if re.match(r'^\+?[0-9]{7,15}$', txt):
+        asyncio.create_task(login_and_get_session(client, message.from_user.id, chat_id, txt))
+        return
 
-📌 **حالة حسابك:**
-{session_status}
+
+# 2. أمر البداية /start
+@bot.on_message(filters.command("start") & filters.private)
+async def start_command(client: Client, message: Message):
+    user_id = message.from_user.id
+    first_name = message.from_user.first_name or "المستخدم"
+
+    user_data = db.get_user(user_id)
+    has_session = bool(user_data and user_data.get("session") and len(user_data["session"]) > 15)
+
+    status_badge = "🟢 **حسابك مربوط وجلستك نشطة بنجاح!**" if has_session else "🔴 **لم تسجل دخولك بعد** (سجل رقمك ليتمكن البوت من قراءة القنوات نيابة عنك)."
+
+    welcome_msg = f"""👋 **أهلاً بك يا {first_name}!**
+
+🤖 **محرر المحتوى والناشر الأكاديمي الذكي (Userbot Core Engine)**
+النظام يعمل بجلسات المستخدمين الحقيقية لقراءة القنوات وإعادة صياغتها بالذكاء الاصطناعي والنشر باسمك مباشرة.
+
+📌 **حالة الجلسة الخاصة بك:**
+{status_badge}
 
 👇 **اختر من الأزرار أدناه للبدء:**"""
 
-    await event.respond(welcome_text, buttons=get_main_keyboard(has_session))
+    await message.reply_text(welcome_msg, reply_markup=get_main_keyboard(has_session))
 
 
-@bot.on(events.NewMessage(pattern=r"^/help"))
-async def help_handler(event):
-    help_text = """📖 **دليل الاستخدام السريع:**
+# 3. معالجة الضغط على الأزرار التفاعلية (Callback Queries)
+@bot.on_callback_query()
+async def callback_dispatcher(client: Client, query: CallbackQuery):
+    data = query.data
+    user_id = query.from_user.id
+    chat_id = query.message.chat.id
 
-1. **تسجيل الدخول:** اضغط على زر `📱 تسجيل الدخول`، وأرسل رقم هاتفك مع الرمز الدولي (مثال: `+966500000000`).
-2. **رمز التحقق:** سيصلك كود من تيليجرام، أرسله هنا ليتم استخراج جلستك الخاصة وحفظها بأمان.
-3. **إنشاء حملة:** حدد اسم الحملة وقناة النشر الهدف (مثال: `@MyChannel`).
-4. **إضافة مصادر:** أضف القنوات التي تريد مراقبتها (مثال: `@KSU_News`).
-5. **العمل التلقائي:** سيتولى عامل الزحف في الخلفية قراءة المنشورات، صياغتها بالذكاء الاصطناعي، ونشرها في قناتك باسمك!"""
-    await event.respond(help_text)
+    user_data = db.get_user(user_id)
+    has_session = bool(user_data and user_data.get("session") and len(user_data["session"]) > 15)
 
+    if data == "btn_main":
+        await query.message.edit_text("🎛 **لوحة التحكم الرئيسية:**", reply_markup=get_main_keyboard(has_session))
 
-@bot.on(events.NewMessage(pattern=r"^/stats"))
-async def stats_handler(event):
-    user_id = event.sender_id
-    stats = db.get_stats(user_id)
-    text = f"""📊 **إحصائيات حسابك:**
-• عدد الحملات: {stats.get('total_campaigns', 0)}
-• المصادر المراقبة: {stats.get('total_sources', 0)}
-• المنشورات المعالجة: {stats.get('total_processed', 0)}
-• المنشورات المنشورة: {stats.get('total_forwarded', 0)}
-• إعلانات تم استبدالها بإعلانك: {stats.get('total_ad_replaced', 0)}
-• رسائل تم تخطيها (SKIP): {stats.get('total_skipped', 0)}"""
-    await event.respond(text)
-
-
-# ==============================================================================
-# معالجة الأحداث التفاعلية (Inline Callbacks)
-# ==============================================================================
-@bot.on(events.CallbackQuery)
-async def callback_handler(event):
-    data = event.data
-    user_id = event.sender_id
-    user_record = db.get_user(user_id)
-    has_session = bool(user_record and user_record.get("session_string") and len(user_record["session_string"]) > 15)
-
-    if data == b"menu_main":
-        await event.edit("🎛 **لوحة التحكم الرئيسية:**", buttons=get_main_keyboard(has_session))
-
-    elif data == b"menu_info":
-        info_text = """💡 **كيف يعمل البوت تحت الغطاء؟**
+    elif data == "btn_info":
+        info_text = """💡 **آلية عمل البوت تحت الغطاء (اليوزربوت):**
 
 1. **قراءة القنوات بدون رتبة إشراف:**
-البوتات العادية لا يمكنها قراءة قنوات الآخرين. نحن نستخدم جلستك (Session String) ليتصرف الكود كأنك أنت من يقرأ القناة.
-2. **الذكاء الاصطناعي:**
-يقوم الكود بإعادة صياغة المنشور كأنه منشور حصري لقناتك، دون أي ذكر للمصادر السابقة.
-3. **استبدال الإعلانات:**
-في حال نشر المصدر إعلاناً لمنافسين (حل واجبات، بحوث)، يستبدله الكود تلقائياً بإعلان خدماتك الطلابية!
-4. **الأمان الكامل:**
-لا يتم مشاركة جلستك مع أي مستخدم آخر. كل مستخدم يملك خيط زحف خاص به تماماً."""
-        back_btn = [[Button.inline("🔙 العودة للرئيسية", b"menu_main")]]
-        await event.edit(info_text, buttons=back_btn)
+البوتات العادية لا تقرأ القنوات. نحن نسجل دخولك كـ "مستخدم حقيقي" ونستخرج الـ `session_string`، فيفتح الكود اتصالاً بجلسة حسابك ويقرأ المنشورات.
+2. **الذكاء الاصطناعي (DeepSeek):**
+يعيد صياغة المنشور كأنه حصري لقناتك، وإذا كان المحتوى غير مفيد يرد بـ `SKIP` فيتم حذفه وتخطيه.
+3. **النشر بجلسة المستخدم:**
+ينشر في قناة الهدف باسمك وبجلستك أنت، فتظهر الرسالة كأنك أنت الناشر مع كامل الصور.
+4. **العزل الأمني الصارم:**
+لا يتم استخدام جلسة المشرف لأي مستخدم آخر. كل مستخدم يعمل بجلسته الخاصة المستقلة."""
+        back_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة للرئيسية", callback_data="btn_main")]])
+        await query.message.edit_text(info_text, reply_markup=back_btn)
 
-    elif data == b"menu_login":
-        INPUT_STATES[user_id] = {"action": "waiting_phone"}
-        prompt_text = """📱 **تسجيل الدخول واستخراج الجلسة:**
+    elif data == "btn_login":
+        # المرحلة الأولى: طلب رقم الهاتف ثم بدء تسجيل الدخول
+        ask_phone_prompt = """📱 **المرحلة الأولى: تسجيل الدخول واستخراج الجلسة:**
 
-يرجى إرسال رقم هاتفك مع الرمز الدولي الآن.
-مثال:
-`+966501234567` أو `+96590123456`
+أرسل الآن رقم هاتفك مع الرمز الدولي في هذه المحادثة:
+(مثال: `+966501234567` أو `+96590123456`)
 
-⚠️ *ملاحظة أمنية: يتم حفظ الجلسة محلياً في قاعدة البيانات المشفرة ولا يتم مشاركتها أبداً.*"""
-        back_btn = [[Button.inline("❌ إلغاء", b"menu_main")]]
-        await event.edit(prompt_text, buttons=back_btn)
+⚠️ *سيصلك كود تحقق (OTP) على حسابك في تيليجرام.*"""
+        await query.message.edit_text(ask_phone_prompt)
 
-    elif data == b"menu_manual_session":
-        INPUT_STATES[user_id] = {"action": "waiting_manual_session"}
-        prompt_text = """🔑 **إدخال كود الجلسة الجاهز (Telethon StringSession):**
+        # استقبال رقم الهاتف عبر ask_user
+        try:
+            phone_input = await ask_user(client, chat_id, "👉 اكتب رقم هاتفك الآن وأرسله:", timeout=120)
+            asyncio.create_task(login_and_get_session(client, user_id, chat_id, phone_input))
+        except asyncio.TimeoutError:
+            await client.send_message(chat_id, "⌛️ انتهى وقت إدخال الرقم. اضغط زر تسجيل الدخول للبدء مجدداً.", reply_markup=get_main_keyboard(False))
 
-إذا كان لديك بالفعل كود جلسة مستخرج مسبقاً، يمكنك لصقه هنا الآن:"""
-        back_btn = [[Button.inline("❌ إلغاء", b"menu_main")]]
-        await event.edit(prompt_text, buttons=back_btn)
-
-    elif data == b"menu_logout":
+    elif data == "btn_logout":
         db.delete_user_session(user_id)
-        await event.edit("✅ تم تسجيل الخروج وحذف جلستك من قاعدة البيانات بنجاح.", buttons=get_main_keyboard(False))
+        await query.message.edit_text("✅ تم تسجيل الخروج وحذف جلستك من قاعدة البيانات بنجاح.", reply_markup=get_main_keyboard(False))
 
-    elif data == b"menu_campaigns":
+    elif data == "btn_campaigns":
         campaigns = db.get_user_campaigns(user_id)
         if not campaigns:
             text = "⚠️ ليس لديك أي حملات حالياً. اضغط الزر أدناه لإنشاء أول حملة لك!"
-            btns = [
-                [Button.inline("➕ إنشاء حملة الآن", b"menu_new_campaign")],
-                [Button.inline("🔙 العودة", b"menu_main")]
-            ]
-            await event.edit(text, buttons=btns)
+            btns = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ إنشاء حملة الآن", callback_data="btn_new_campaign")],
+                [InlineKeyboardButton("🔙 العودة", callback_data="btn_main")]
+            ])
+            await query.message.edit_text(text, reply_markup=btns)
             return
 
         lines = ["📢 **حملاتك الإعلانية والنشر:**\n"]
-        btns = []
+        buttons_list = []
         for c in campaigns:
             status = "🟢 نشطة" if c["enabled"] else "⏸ متوقفة"
             src_count = len(c.get("sources", []))
             lines.append(f"• **{c['name']}** ({status})\n  الهدف: `{c['target_channel']}` | المصادر: {src_count}\n")
-            btns.append([Button.inline(f"⚙️ إدارة: {c['name']}", f"camp_manage_{c['id']}".encode())])
+            buttons_list.append([InlineKeyboardButton(f"⚙️ إدارة: {c['name']}", callback_data=f"camp_view_{c['id']}")])
 
-        btns.append([Button.inline("➕ إضافة حملة جديدة", b"menu_new_campaign")])
-        btns.append([Button.inline("🔙 العودة للرئيسية", b"menu_main")])
-        await event.edit("".join(lines), buttons=btns)
+        buttons_list.append([InlineKeyboardButton("➕ إضافة حملة جديدة", callback_data="btn_new_campaign")])
+        buttons_list.append([InlineKeyboardButton("🔙 العودة للرئيسية", callback_data="btn_main")])
+        await query.message.edit_text("".join(lines), reply_markup=InlineKeyboardMarkup(buttons_list))
 
-    elif data == b"menu_new_campaign":
-        INPUT_STATES[user_id] = {"action": "waiting_campaign_name"}
-        await event.edit("🏷 **خطوة 1 من 2:** أرسل اسماً توضيحياً لحملتك الجديدة (مثال: `أخبار جامعة الملك سعود`):")
+    elif data == "btn_new_campaign":
+        await query.message.edit_text("🏷 **إنشاء حملة جديدة:**\nأرسل الآن اسم الحملة (مثال: `أخبار جامعة الملك سعود`):")
+        try:
+            name_input = await ask_user(client, chat_id, "👉 أرسل اسم الحملة:", timeout=120)
+            target_input = await ask_user(client, chat_id, f"📢 أرسل الآن **معرّف قناة النشر الهدف** للحملة [{name_input}]:\n(مثال: `@MyChannel` أو `-100123456789`)", timeout=120)
 
-    elif data.startswith(b"camp_manage_"):
-        camp_id = data.decode().replace("camp_manage_", "")
+            camp_id = db.create_campaign(user_id, name_input, target_input)
+            await client.send_message(chat_id, f"🎉 **تم إنشاء الحملة بنجاح!**\nالاسم: `{name_input}`\nالقناة الهدف: `{target_input}`", reply_markup=get_main_keyboard(True))
+        except asyncio.TimeoutError:
+            await client.send_message(chat_id, "⌛️ انتهى وقت الانتظار.", reply_markup=get_main_keyboard(True))
+
+    elif data.startswith("camp_view_"):
+        camp_id = data.replace("camp_view_", "")
         campaigns = db.get_user_campaigns(user_id)
         camp = next((c for c in campaigns if c["id"] == camp_id), None)
         if not camp:
-            await event.answer("الحملة غير موجودة", alert=True)
+            await query.answer("الحملة غير موجودة", show_alert=True)
             return
 
         status_str = "🟢 نشطة" if camp["enabled"] else "⏸ متوقفة"
         sources = camp.get("sources", [])
-        src_lines = "\n".join([f"  - `{s['target']}` ({s.get('title', '')})" for s in sources]) if sources else "  (لا توجد مصادر مضافة بعد)"
+        src_lines = "\n".join([f"  - `{s['target']}` (آخر رسالة: {s.get('last_processed_id', 0)})" for s in sources]) if sources else "  (لا توجد مصادر مضافة بعد)"
 
         text = f"""⚙️ **إدارة الحملة:** **{camp['name']}**
 • الحالة: {status_str}
 • قناة النشر الهدف: `{camp['target_channel']}`
 • المصادر المراقبة ({len(sources)}):
-{src_lines}
-
-👇 **إجراءات الحملة:**"""
+{src_lines}"""
 
         toggle_txt = "⏸ إيقاف مؤقت" if camp["enabled"] else "▶️ تفعيل الحملة"
-        btns = [
-            [Button.inline(toggle_txt, f"camp_toggle_{camp_id}".encode()), Button.inline("➕ إضافة قناة مصدر", f"camp_addsrc_{camp_id}".encode())],
-            [Button.inline("🎯 تخصيص إعلان المنافسين", f"camp_ad_{camp_id}".encode()), Button.inline("🗑 حذف الحملة", f"camp_del_{camp_id}".encode())],
-            [Button.inline("🔙 قائمة الحملات", b"menu_campaigns")]
-        ]
-        await event.edit(text, buttons=btns)
+        btns = InlineKeyboardMarkup([
+            [InlineKeyboardButton(toggle_txt, callback_data=f"camp_tgl_{camp_id}"),
+             InlineKeyboardButton("➕ إضافة مصدر للمراقبة", callback_data=f"camp_asrc_{camp_id}")],
+            [InlineKeyboardButton("🗑 حذف الحملة", callback_data=f"camp_del_{camp_id}")],
+            [InlineKeyboardButton("🔙 قائمة الحملات", callback_data="btn_campaigns")]
+        ])
+        await query.message.edit_text(text, reply_markup=btns)
 
-    elif data.startswith(b"camp_toggle_"):
-        camp_id = data.decode().replace("camp_toggle_", "")
+    elif data.startswith("camp_tgl_"):
+        camp_id = data.replace("camp_tgl_", "")
         campaigns = db.get_user_campaigns(user_id)
         camp = next((c for c in campaigns if c["id"] == camp_id), None)
         if camp:
-            new_state = 0 if camp["enabled"] else 1
-            db.update_campaign(camp_id, enabled=new_state)
-            await event.answer("تم تحديث حالة الحملة بنجاح!")
-            # إعادة عرض إدارة الحملة
-            cb_data = f"camp_manage_{camp_id}".encode()
-            event.data = cb_data
-            await callback_handler(event)
+            db.update_campaign(camp_id, enabled=0 if camp["enabled"] else 1)
+            await query.answer("تم تغيير حالة الحملة!")
+            query.data = f"camp_view_{camp_id}"
+            await callback_dispatcher(client, query)
 
-    elif data.startswith(b"camp_del_"):
-        camp_id = data.decode().replace("camp_del_", "")
+    elif data.startswith("camp_del_"):
+        camp_id = data.replace("camp_del_", "")
         db.delete_campaign(camp_id)
-        await event.answer("تم حذف الحملة بنجاح!", alert=True)
-        event.data = b"menu_campaigns"
-        await callback_handler(event)
+        await query.answer("تم حذف الحملة بنجاح!", show_alert=True)
+        query.data = "btn_campaigns"
+        await callback_dispatcher(client, query)
 
-    elif data.startswith(b"camp_addsrc_"):
-        camp_id = data.decode().replace("camp_addsrc_", "")
-        INPUT_STATES[user_id] = {"action": "waiting_source_channel", "campaign_id": camp_id}
-        await event.edit("📥 **أرسل الآن معرّف أو رابط القناة المصدرية المطلوب مراقبتها** (مثال: `@KSU_News` أو رابط القناة):")
+    elif data.startswith("camp_asrc_"):
+        camp_id = data.replace("camp_asrc_", "")
+        try:
+            src_input = await ask_user(client, chat_id, "📥 **أرسل الآن رابط أو معرّف القناة المصدرية المطلوب مراقبتها:**\n(مثال: `@KSU_News` أو رابط القناة)", timeout=120)
+            db.add_source(camp_id, user_id, src_input.strip(), title=src_input.strip())
+            await client.send_message(chat_id, f"✅ تمت إضافة المصدر `{src_input}` بنجاح!", reply_markup=get_main_keyboard(True))
+        except asyncio.TimeoutError:
+            await client.send_message(chat_id, "⌛️ انتهى وقت الانتظار.", reply_markup=get_main_keyboard(True))
 
-    elif data == b"menu_sources":
+    elif data == "btn_sources":
         campaigns = db.get_user_campaigns(user_id)
-        all_sources = []
+        all_s = []
         for c in campaigns:
             for s in c.get("sources", []):
-                all_sources.append(f"• `{s['target']}` -> تابعة لحملة [{c['name']}] (آخر رسالة: {s.get('last_processed_id', 0)})")
+                all_s.append(f"• `{s['target']}` -> حملة [{c['name']}] (آخر رسالة: {s.get('last_processed_id', 0)})")
+        msg_t = "📋 **المصادر المراقبة الخاصة بحسابك:**\n\n" + ("\n".join(all_s) if all_s else "⚠️ لا توجد مصادر مضافة بعد.")
+        await query.message.edit_text(msg_t, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة", callback_data="btn_main")]]))
 
-        if not all_sources:
-            await event.edit("⚠️ لا توجد مصادر مضافة بعد. قم بإنشاء حملة وأضف إليها قنوات للمراقبة.", buttons=[[Button.inline("🔙 العودة", b"menu_main")]])
-        else:
-            txt = f"📋 **قائمة المصادر المراقبة الخاصة بك ({len(all_sources)}):**\n\n" + "\n".join(all_sources)
-            await event.edit(txt, buttons=[[Button.inline("🔙 العودة", b"menu_main")]])
+    elif data == "btn_stats":
+        st = db.get_stats(user_id)
+        txt = f"""📊 **إحصائيات حسابك:**
+• إجمالي الحملات: {st.get('campaigns', 0)}
+• المصادر المراقبة: {st.get('sources', 0)}
+• المنشورات الناجحة في قناتك: {st.get('forwarded', 0)}
+• إعلانات منافسين تم استبدالها: {st.get('ad_replaced', 0)}
+• رسائل تم استبعادها بقرار الذكاء (SKIP): {st.get('skipped', 0)}"""
+        await query.message.edit_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 العودة", callback_data="btn_main")]]))
 
-    elif data == b"menu_stats":
-        stats = db.get_stats(user_id)
-        text = f"""📊 **إحصائيات حسابك الدقيقة:**
-• إجمالي الحملات: {stats.get('total_campaigns', 0)}
-• إجمالي المصادر المراقبة: {stats.get('total_sources', 0)}
-• المنشورات التي تمت معالجتها: {stats.get('total_processed', 0)}
-• المنشورات الناجحة في قناتك: {stats.get('total_forwarded', 0)}
-• إعلانات منافسين تم استبدالها: {stats.get('total_ad_replaced', 0)}
-• رسائل تم استبعادها بقرار الذكاء (SKIP): {stats.get('total_skipped', 0)}"""
-        await event.edit(text, buttons=[[Button.inline("🔙 العودة", b"menu_main")]])
-
-    elif data == b"menu_ad":
-        INPUT_STATES[user_id] = {"action": "waiting_global_ad"}
-        await event.edit("""🎯 **ضبط إعلانك الخاص للخدمات الطلابية:**
-أرسل الآن النص الذي تريد نشره تلقائياً عند رصد أي إعلان لمنافسين في القنوات المصدر:""")
-
-    elif data == b"menu_prompt":
-        INPUT_STATES[user_id] = {"action": "waiting_global_prompt"}
-        await event.edit("""⚙️ **تخصيص تعليمات الذكاء الاصطناعي:**
-أرسل أسلوب الصياغة المطلوب للمحرر الذكي (مثال: `اجعل الأسلوب رسمياً وأكاديمياً ومباشراً للطلبة مع إبراز المواعيد`):""")
-
-
-# ==============================================================================
-# معالجة المدخلات النصية متعددة الخطوات (Login Flow & Config Steps)
-# ==============================================================================
-@bot.on(events.NewMessage)
-async def message_input_dispatcher(event):
-    if event.text.startswith("/"):
-        return
-
-    user_id = event.sender_id
-    text = event.text.strip()
-
-    # 1. تدفق تسجيل الدخول (OTP / Password)
-    if user_id in AUTH_STATES:
-        state = AUTH_STATES[user_id]
-        step = state.get("step")
-
-        # إدخال رمز OTP
-        if step == "waiting_code":
-            clean_code = text.replace(" ", "").replace("-", "")
-            temp_client: TelegramClient = state["client"]
-            phone = state["phone"]
-            phone_code_hash = state["phone_code_hash"]
-
-            try:
-                await temp_client.sign_in(phone, clean_code, phone_code_hash=phone_code_hash)
-
-                # إذا نجح تسجيل الدخول، نستخرج الجلسة النصية
-                session_str = temp_client.session.save()
-                db.update_user_session(user_id, session_str, phone=phone)
-                del AUTH_STATES[user_id]
-                await temp_client.disconnect()
-
-                success_msg = f"""🎉 **تم استخراج الجلسة وربط حسابك بنجاح!**
-📱 الرقم: `{phone}`
-🔒 تم تخزين الجلسة النصية (StringSession) بأمان في قاعدة البيانات.
-🚀 عامل الزحف في الخلفية أصبح قادراً الآن على قراءة القنوات نيابة عنك والنشر في قناتك!"""
-                await event.respond(success_msg, buttons=get_main_keyboard(True))
-                return
-
-            except SessionPasswordNeededError:
-                state["step"] = "waiting_password"
-                await event.respond("🔐 **حسابك محمي بالتحقق بخطوتين (2FA Password):**\nيرجى إرسال كلمة مرور حسابك الآن:")
-                return
-
-            except PhoneCodeInvalidError:
-                await event.respond("❌ رمز التحقق غير صحيح! يرجى إعادة إرسال الرمز بشكل صحيح:")
-                return
-
-            except PhoneCodeExpiredError:
-                await temp_client.disconnect()
-                del AUTH_STATES[user_id]
-                await event.respond("⚠️ انتهت صلاحية هذا الرمز. اضغط على زر تسجيل الدخول للبدء من جديد.", buttons=get_main_keyboard(False))
-                return
-
-            except Exception as e:
-                await temp_client.disconnect()
-                del AUTH_STATES[user_id]
-                await event.respond(f"❌ حدث خطأ أثناء التحقق: {e}", buttons=get_main_keyboard(False))
-                return
-
-        # إدخال كلمة مرور 2FA
-        elif step == "waiting_password":
-            temp_client: TelegramClient = state["client"]
-            phone = state["phone"]
-
-            try:
-                await temp_client.sign_in(password=text)
-                session_str = temp_client.session.save()
-                db.update_user_session(user_id, session_str, phone=phone)
-                del AUTH_STATES[user_id]
-                await temp_client.disconnect()
-
-                success_msg = f"""🎉 **تم توثيق كلمة المرور وربط الحساب بنجاح!**
-📱 الرقم: `{phone}`
-🚀 البوت جاهز الآن للبدء بالنشر والزحف الذكي."""
-                await event.respond(success_msg, buttons=get_main_keyboard(True))
-                return
-
-            except PasswordHashInvalidError:
-                await event.respond("❌ كلمة المرور غير صحيحة! يرجى إرسالها مرة أخرى:")
-                return
-
-            except Exception as e:
-                await temp_client.disconnect()
-                del AUTH_STATES[user_id]
-                await event.respond(f"❌ حدث خطأ في التحقق من كلمة المرور: {e}", buttons=get_main_keyboard(False))
-                return
-
-    # 2. حالات إدخال البيانات الأخرى (الحملات، القنوات، الإعلانات)
-    if user_id in INPUT_STATES:
-        state = INPUT_STATES.pop(user_id)
-        action = state.get("action")
-
-        # إرسال رقم الهاتف لبدء التسجيل
-        if action == "waiting_phone":
-            phone_match = re.sub(r'[\s\-\(\)]', '', text)
-            if not phone_match.startswith("+"):
-                phone_match = "+" + phone_match
-
-            await event.respond("⏳ جاري الاتصال بخوادم تيليجرام لطلب رمز التحقق...")
-
-            temp_client = TelegramClient(StringSession(), API_ID, API_HASH)
-            try:
-                await temp_client.connect()
-                send_code_res = await temp_client.send_code_request(phone_match)
-
-                AUTH_STATES[user_id] = {
-                    "step": "waiting_code",
-                    "phone": phone_match,
-                    "client": temp_client,
-                    "phone_code_hash": send_code_res.phone_code_hash
-                }
-
-                await event.respond(f"""📩 **تم إرسال رمز التحقق (OTP) إلى حسابك على تيليجرام!**
-الرقم: `{phone_match}`
-
-يرجى إرسال رمز التحقق الآن في هذه المحادثة:""")
-                return
-
-            except PhoneNumberInvalidError:
-                await temp_client.disconnect()
-                await event.respond("❌ رقم الهاتف غير صالح! تأكد من كتابة الرمز الدولي بشكل صحيح (مثال: `+966500000000`).", buttons=get_main_keyboard(False))
-                return
-            except Exception as e:
-                await temp_client.disconnect()
-                await event.respond(f"❌ تعذر إرسال الرمز: {e}", buttons=get_main_keyboard(False))
-                return
-
-        # إدخال الجلسة يدوياً
-        elif action == "waiting_manual_session":
-            if len(text) > 20:
-                db.update_user_session(user_id, text)
-                await event.respond("🎉 تم حفظ الجلسة النصية بنجاح! حسابك جاهز الآن.", buttons=get_main_keyboard(True))
-            else:
-                await event.respond("❌ كود الجلسة غير صالح أو قصير جداً.", buttons=get_main_keyboard(False))
-            return
-
-        # إنشاء حملة جديدة - خطوة 1: الاسم
-        elif action == "waiting_campaign_name":
-            INPUT_STATES[user_id] = {"action": "waiting_campaign_target", "name": text}
-            await event.respond(f"""📢 **خطوة 2 من 2 للحملة [{text}]:**
-أرسل الآن معرّف أو رابط **قناة النشر الهدف** التي تريد أن ينشر البوت فيها المنشورات الجديدة:
-(مثال: `@MyUniversityChannel` أو `-100123456789`)""")
-            return
-
-        # إنشاء حملة جديدة - خطوة 2: قناة الهدف
-        elif action == "waiting_campaign_target":
-            camp_name = state.get("name", "حملة جديدة")
-            target_ch = text.strip()
-            camp_id = db.create_campaign(user_id, camp_name, target_ch)
-            await event.respond(f"""🎉 **تم إنشاء الحملة بنجاح!**
-🏷 الاسم: **{camp_name}**
-📢 القناة الهدف: `{target_ch}`
-
-يمكنك الآن إضافة القنوات المصدرية التي تريد مراقبتها من زر إدارة الحملات.""", buttons=get_main_keyboard(True))
-            return
-
-        # إضافة قناة مصدرية لحملة
-        elif action == "waiting_source_channel":
-            camp_id = state.get("campaign_id")
-            source_target = text.strip()
-            db.add_source(camp_id, user_id, source_target, title=source_target)
-            await event.respond(f"""✅ **تمت إضافة المصدر بنجاح!**
-📥 المصدر: `{source_target}`
-سيقوم عامل الزحف بمراقبة المنشورات الجديدة فقط فور نزولها.""", buttons=get_main_keyboard(True))
-            return
-
-        # تحديث إعلان الخدمات الطلابية
-        elif action == "waiting_global_ad":
+    elif data == "btn_ad":
+        try:
+            ad_text = await ask_user(client, chat_id, "🎯 **أرسل الآن نص إعلان خدماتك الطلابية** الذي سيستبدل إعلانات المنافسين تلقائياً:", timeout=180)
             campaigns = db.get_user_campaigns(user_id)
             for c in campaigns:
-                db.update_campaign(c["id"], custom_ad=text)
-            await event.respond("✅ تم حفظ وتحديث إعلان خدماتك الطلابية لجميع حملاتك بنجاح!", buttons=get_main_keyboard(True))
-            return
+                db.update_campaign(c["id"], custom_ad=ad_text)
+            await client.send_message(chat_id, "✅ تم حفظ وتحديث إعلان خدماتك الطلابية بنجاح!", reply_markup=get_main_keyboard(True))
+        except asyncio.TimeoutError:
+            await client.send_message(chat_id, "⌛️ انتهى وقت الانتظار.", reply_markup=get_main_keyboard(True))
 
-        # تحديث تعليمات المشرف للذكاء الاصطناعي
-        elif action == "waiting_global_prompt":
+    elif data == "btn_prompt":
+        try:
+            prompt_input = await ask_user(client, chat_id, "⚙️ **أرسل تعليمات الصياغة للذكاء الاصطناعي** (مثال: `أسلوب أكاديمي مباشر مع إبراز المواعيد`):", timeout=180)
             campaigns = db.get_user_campaigns(user_id)
             for c in campaigns:
-                db.update_campaign(c["id"], custom_instruction=text)
-            await event.respond("✅ تم حفظ وتحديث تعليمات الذكاء الاصطناعي بنجاح!", buttons=get_main_keyboard(True))
-            return
+                db.update_campaign(c["id"], custom_instruction=prompt_input)
+            await client.send_message(chat_id, "✅ تم حفظ وتحديث تعليمات الذكاء الاصطناعي بنجاح!", reply_markup=get_main_keyboard(True))
+        except asyncio.TimeoutError:
+            await client.send_message(chat_id, "⌛️ انتهى وقت الانتظار.", reply_markup=get_main_keyboard(True))
 
 
 # ==============================================================================
-# دمج وتشغيل خادم البوت وعامل الزحف معاً (All-in-One Engine for Free Hosts)
+# تشغيل التطبيق الكامل (المرحلة الأولى + المرحلة الثانية في الخلفية)
 # ==============================================================================
-async def start_combined_app():
-    """تشغيل البوت وعامل الزحف والخادم معاً لدعم الاستضافات المجانية الفردية"""
+async def main_application():
     # 1. تهيئة قاعدة البيانات
     db.init_db()
 
-    # 2. تشغيل خادم Keep-Alive في خيط مستقل
-    http_thread = threading.Thread(target=run_keepalive_http, daemon=True)
-    http_thread.start()
+    # 2. تشغيل خادم Keep-Alive في خيط مستقل للاستضافات المجانية
+    threading.Thread(target=run_keepalive_http, daemon=True).start()
 
-    # 3. تشغيل عامل الزحف كـ Background Task داخل نفس حلقة الأحداث (Asyncio)
+    # 3. تشغيل المرحلة الثانية (عامل الزحف والنشر) في الخلفية
     import worker
-    asyncio.create_task(worker.worker_main_loop())
+    asyncio.create_task(worker.worker_task_loop())
 
-    # 4. تشغيل عميل التيليجرام بوت
-    logging.info("🚀 جاري بدء تشغيل البوت الأساسي عبر Telethon...")
-    await bot.start(bot_token=BOT_TOKEN)
+    # 4. تشغيل البوت الأساسي عبر Pyrogram
+    logging.info("🚀 تشغيل البوت الأساسي عبر Pyrogram...")
+    await bot.start()
     bot_me = await bot.get_me()
-    logging.info(f"✅ البوت يعمل بنجاح باسم: @{bot_me.username} ({bot_me.first_name})")
+    logging.info(f"✅ تم تشغيل البوت بنجاح: @{bot_me.username} ({bot_me.first_name})")
 
     # إبقاء البوت مستمراً
-    await bot.run_until_disconnected()
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(start_combined_app())
+        asyncio.run(main_application())
     except KeyboardInterrupt:
-        logging.info("🛑 تم إيقاف البوت يدوياً.")
+        logging.info("🛑 تم إيقاف البوت بأمان.")
